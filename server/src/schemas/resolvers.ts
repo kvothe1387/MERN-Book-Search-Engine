@@ -1,5 +1,11 @@
 import User from '../models/index.js';
-import { signToken, AuthenticationError } from '../services/auth.js';
+import { signToken, } from '../services/auth.js';
+import { AuthenticationError } from 'apollo-server-express';
+
+interface Context {
+  user?: { _id: string; username: string; email: string }; // Define the user type based on your JWT payload
+}
+
 
 interface LoginUserArgs {
   email: string;
@@ -31,33 +37,28 @@ interface RemoveBookArgs {
 
 const resolvers = {
   Query: {
-    me: async (_parent: any, _args: any, context: any) => {
-      if (context.user) {
-        return User.findOne({ _id: context.user.data._id });
+    me: async (_: unknown, __: unknown, { user }: Context) => {
+      if (!user) {
+        throw new AuthenticationError('You must be logged in.');
       }
-      throw new AuthenticationError('Not logged in');
+      return await User.findById(user._id).populate('sabedBooks');
     },
   },
 
   Mutation: {
-    login: async (_parent: any, { email, password }: LoginUserArgs) => {
+    login: async (_: unknown, { email, password }: LoginUserArgs) => {
       const user = await User.findOne({ email });
 
-      if (!user) {
+      if (!user || !(await user.isCorrectPassword(password))) {
         throw new AuthenticationError('Incorrect credentials');
       }
-      const correctPassword = await user.isCorrectPassword(password);
-
-      if (!correctPassword) {
-        throw new AuthenticationError('Incorrect credentials');
-      }
-      const token = signToken(user.username, user.email, user._id);
+      const token = signToken(user.username, user.email, user.id);
       return { token, user };
     },
 
     addUser: async (_parent: any, { input }: AddUserArgs) => {
       const user = await User.create({ ...input });
-      const token = signToken(user.username, user.email, user._id);
+      const token = signToken(user.username, user.email, user.id);
       return { token, user };
     },
 
